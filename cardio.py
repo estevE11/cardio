@@ -38,11 +38,7 @@ class CardioNet(nn.Module):
     def __init__(self):
         super(CardioNet, self).__init__()
         self.seq = nn.Sequential(
-            nn.Linear(15, 128),
-            nn.ReLU(),
-            nn.Linear(128, 256),
-            nn.ReLU(),
-            nn.Linear(256, 64),
+            nn.Linear(15, 64),
             nn.ReLU(),
             nn.Linear(64, 1),
             nn.Sigmoid()
@@ -59,17 +55,18 @@ if __name__ == "__main__":
     X_train, Y_train, X_test, test = load_dataset()
 
     model = CardioNet().to("cuda:0")
+    model.train()
 
     # train
     BS = 64
     optim = torch.optim.Adam(model.parameters(), lr=0.001)
-    lr_schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=10000, gamma=0.01)
+    lr_schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=1000, gamma=0.01)
     loss_function = nn.BCELoss()
 
     losses = []
     acc = []
 
-    for epoch in (t:= trange(20000)):
+    for epoch in (t:= trange(10000)):
         samp = np.random.randint(0, len(X_train), BS)
         X = torch.tensor(X_train[samp], device="cuda:0").float()
         Y = torch.tensor(Y_train[samp], device="cuda:0").float()
@@ -92,7 +89,7 @@ if __name__ == "__main__":
 
 
     acc_sum = 0
-
+    model.eval()
     for i in (t := trange(X_train.shape[0])):
         X = torch.tensor(X_train[i], device="cuda:0").float()
         Y = torch.tensor(Y_train[i], device="cuda:0").float()
@@ -105,7 +102,6 @@ if __name__ == "__main__":
     if q == "n": exit()
 
     preds = []
-
     for i in (t := trange(X_test.shape[0])):
         X = torch.tensor(X_test[i], device="cuda:0").float()
 
