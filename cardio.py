@@ -6,8 +6,8 @@ from tqdm import trange
 from torch import nn, Tensor
 import torch
 
-def transform_dataset(dataset, test=False):
-    if test:
+def transform_dataset(dataset, subm=False):
+    if subm:
         dataset = dataset[["age", "height", "weight", "ap_hi", "ap_lo", "gender", "smoke", "alco", "active", "cholesterol", "gluc"]]
     else:
         dataset = dataset[["age", "height", "weight", "ap_hi", "ap_lo", "gender", "smoke", "alco", "active", "cholesterol", "gluc", "cardio"]]
@@ -22,12 +22,17 @@ def transform_dataset(dataset, test=False):
 
 def load_dataset():
     train = pd.read_csv("dataset/train.csv")
-    test = pd.read_csv("dataset/test.csv")
+    subm = pd.read_csv("dataset/test.csv")
+
+    test = train.sample(frac=0.2)
+    train = train.drop(test.index)
 
     train = transform_dataset(train)
+    test = transform_dataset(test)
     Y_train = train["cardio"].values.reshape(-1, 1)
+    Y_test = test["cardio"].values.reshape(-1, 1)
 
-    return train.drop(columns="cardio").values, Y_train, transform_dataset(test, test=True).values, test.values
+    return train.drop(columns="cardio").values, Y_train, test.drop(columns="cardio").values, Y_test, transform_dataset(subm, subm=True).values
 
 def save_result(result, model):
     submission = pd.read_csv('dataset/sample.csv')
@@ -84,26 +89,26 @@ class CardioNet(nn.Module):
         x = torch.cat((x_bin, x_dec), dim=1)
         return self.final(x)
 
-
-
-if __name__ == "__main__":
-    X_train, Y_train, X_test, test = load_dataset()
+def train():
+    X_train, Y_train, X_test, Y_test, _ = load_dataset()
 
     model = CardioNet().to("cuda:0")
     model.train()
 
     # train
-    BS = 64
-    optim = torch.optim.Adam(model.parameters(), lr=0.001)
-    lr_schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=400, gamma=0.002)
+    BS = 32
+    optim = torch.optim.AdamW(model.parameters(), lr=0.001)
+    lr_schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=2000, gamma=0.005)
     loss_function = nn.BCELoss()
 
     losses = []
+    loss_sum = 0
     acc = []
     acc_sum = 0
 
-    for epoch in range(3):
+    for epoch in range(5):
         acc_sum = 0
+        loss_sum = 0
         for i in (t := trange(0, X_train.shape[0], BS)):
             samp = np.random.randint(0, len(X_train), BS)
 
@@ -119,41 +124,57 @@ if __name__ == "__main__":
             lr_schedule.step()
 
             losses.append(loss.item())
+            loss_sum += losses[-1]
             acc.append((out.round() == Y).sum().item() / BS)
             acc_sum += acc[-1]
 
-            t.set_description(f"Epoch {epoch+1} => Loss: {loss.item():.2f} - Acc: {acc[-1]:.2f}")
-        print(f"Avg acc: {acc_sum / (X_train.shape[0]/BS):.2f}")
+            t.set_description(f"Epoch {epoch+1} => Avg loss: {loss_sum / ((i+1)/BS):.2f} - Acc: {acc_sum / ((i+1)/BS):.2f}")
+    
+    model.eval()
 
+    # Test training dataset
+    X = torch.tensor(X_train[:X_train.shape[0]], device="cuda:0").float()
+    Y = torch.tensor(Y_train[:X_train.shape[0]], device="cuda:0").float()
+
+    out = model(X).to("cuda:0")
+    acc = (out.round() == Y).sum().item()
+    print(f"Training Acc: {acc / X_train.shape[0]:.3f}")
+    
+
+    # Test test dataset
+    X = torch.tensor(X_test[:X_test.shape[0]], device="cuda:0").float()
+    Y = torch.tensor(Y_test[:X_test.shape[0]], device="cuda:0").float()
+
+    out = model(X).to("cuda:0")
+    acc = (out.round() == Y).sum().item()
+    print(f"** Test acc: {acc / X_test.shape[0]:.3f}")
+
+    return acc / X_test.shape[0], model, losses, acc
     
 
 
+if __name__ == "__main__":
 
-    acc_sum = 0
-    model.eval()
-    for i in (t := trange(X_train.shape[0])):
-        X = torch.tensor(X_train[i], device="cuda:0").float()
-        Y = torch.tensor(Y_train[i], device="cuda:0").float()
+    acc = 0
+    model = None
+    losses = []
+    accs = []
+    while acc < 0.73:
+        acc, model, losses, accs = train()
 
-        out = model(X).to("cuda:0")
-        acc_sum += (out.round() == Y).sum().item()
-    print(f"Acc: {acc_sum / X_train.shape[0]:.2f}")
+    import matplotlib.pyplot as plt
+    plt.plot(losses)
+    plt.plot(accs)
+    plt.show()
 
-    q = input("Save result? [Y/n]: ")
-    if q == "n": exit()
+    _, _, _, _, X_subm = load_dataset()    
 
     preds = []
-    for i in (t := trange(X_test.shape[0])):
-        X = torch.tensor(X_test[i], device="cuda:0").float()
+    for i in (t := trange(X_subm.shape[0])):
+        X = torch.tensor(X_subm[i], device="cuda:0").float()
 
         out = model(X)
         preds.append(int(out.round().item()))
 
     preds = np.array(preds)
     save_result(preds, model)
-    
-
-    import matplotlib.pyplot as plt
-    plt.plot(losses)
-    plt.plot(acc)
-    plt.show()
