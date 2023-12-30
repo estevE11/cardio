@@ -4,6 +4,7 @@ import os
 from tqdm import trange
 
 from tinygrad import nn, Tensor
+from tinygrad.nn import optim
 from tinygrad.jit import TinyJit
 from tinygrad.nn.state import get_parameters
 
@@ -28,7 +29,7 @@ def load_dataset():
     train = transform_dataset(train)
     Y_train = train["cardio"].values.reshape(-1, 1)
 
-    return train.drop(columns="cardio").values, Y_train, transform_dataset(test, test=True).values, test.values
+    return train.drop(columns="cardio").values.astype(np.float32), Y_train.astype(np.float32), transform_dataset(test, test=True).values.astype(np.float32), test.values.astype(np.float32)
 
 def save_result(result, model):
     submission = pd.read_csv('dataset/sample.csv')
@@ -92,7 +93,7 @@ if __name__ == "__main__":
 
     # train
     BS = 64
-    optim = nn.optim.Adam(get_parameters(model), lr=0.001)
+    optim = optim.Adam(get_parameters(model), lr=0.001)
     #lr_schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=400, gamma=0.002)
 
     losses = []
@@ -113,7 +114,7 @@ if __name__ == "__main__":
 
             #lr_schedule.step()
 
-            return loss.realize(), (out.numpy().round() == Y.numpy()).sum().item() / BS
+        return loss.realize(), (out.numpy().round() == Y.numpy()).sum().item() / BS
 
     for epoch in range(3):
         acc_sum = 0
