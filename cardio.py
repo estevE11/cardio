@@ -32,7 +32,7 @@ def load_dataset():
     Y_train = train["cardio"].values.reshape(-1, 1)
     Y_test = test["cardio"].values.reshape(-1, 1)
 
-    return train.drop(columns="cardio").values, Y_train, test.drop(columns="cardio").values, Y_test, transform_dataset(subm, subm=True).values
+    return train.drop(columns="cardio").values.astype(np.float32), Y_train.astype(np.float32), test.drop(columns="cardio").values.astype(np.float32), Y_test.astype(np.float32), transform_dataset(subm, subm=True).values.astype(np.float32)
 
 def save_result(result, model):
     submission = pd.read_csv('dataset/sample.csv')
@@ -92,7 +92,8 @@ class CardioNet(nn.Module):
 def train():
     X_train, Y_train, X_test, Y_test, _ = load_dataset()
 
-    model = CardioNet().to("cuda:0")
+    device = torch.device("cpu")
+    model = CardioNet().to(device)
     model.train()
 
     # train
@@ -111,12 +112,12 @@ def train():
         loss_sum = 0
         for i in (t := trange(0, X_train.shape[0], BS)):
             samp = np.random.randint(0, len(X_train), BS)
-
-            X = torch.tensor(X_train[samp], device="cuda:0").float()
-            Y = torch.tensor(Y_train[samp], device="cuda:0").float()
+            
+            X = torch.tensor(X_train[samp].astype(np.float32), device=device).float()
+            Y = torch.tensor(Y_train[samp].astype(np.float32), device=device).float()
 
             optim.zero_grad()
-            out = model(X).to("cuda:0")
+            out = model(X).to(device)
             loss = loss_function(out, Y)
             loss.backward()
             optim.step()
@@ -133,19 +134,19 @@ def train():
     model.eval()
 
     # Test training dataset
-    X = torch.tensor(X_train[:X_train.shape[0]], device="cuda:0").float()
-    Y = torch.tensor(Y_train[:X_train.shape[0]], device="cuda:0").float()
+    X = torch.tensor(X_train[:X_train.shape[0]], device=device).float()
+    Y = torch.tensor(Y_train[:X_train.shape[0]], device=device).float()
 
-    out = model(X).to("cuda:0")
+    out = model(X).to(device)
     acc = (out.round() == Y).sum().item()
     print(f"Training Acc: {acc / X_train.shape[0]:.3f}")
     
 
     # Test test dataset
-    X = torch.tensor(X_test[:X_test.shape[0]], device="cuda:0").float()
-    Y = torch.tensor(Y_test[:X_test.shape[0]], device="cuda:0").float()
+    X = torch.tensor(X_test[:X_test.shape[0]], device=device).float()
+    Y = torch.tensor(Y_test[:X_test.shape[0]], device=device).float()
 
-    out = model(X).to("cuda:0")
+    out = model(X).to(device)
     acc = (out.round() == Y).sum().item()
     print(f"** Test acc: {acc / X_test.shape[0]:.3f}")
 
@@ -171,7 +172,7 @@ if __name__ == "__main__":
 
     preds = []
     for i in (t := trange(X_subm.shape[0])):
-        X = torch.tensor(X_subm[i], device="cuda:0").float()
+        X = torch.tensor(X_subm[i], device=model.device).float()
 
         out = model(X)
         preds.append(int(out.round().item()))
