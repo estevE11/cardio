@@ -62,6 +62,7 @@ model = CNN().to(device)
 # Define loss function and optimizer
 criterion = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
+lr_schedule = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20000, gamma=0.001)
 
 ts = time.monotonic()
 # Training loop
@@ -73,6 +74,8 @@ for epoch in range(10):  # Number of epochs
         loss = criterion(output.squeeze(), target)
         loss.backward()
         optimizer.step()
+
+        lr_schedule.step()
 
     # Validation
     model.eval()
@@ -86,7 +89,7 @@ for epoch in range(10):  # Number of epochs
             correct += pred.eq(target.view_as(pred)).sum().item()
 
     test_loss /= len(test_loader.dataset)
-    print(f'Epoch: {epoch}, Test set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} ({100. * correct / len(test_loader.dataset):.3f}%)')
+    print(f'Epoch: {epoch}, Test set: Average loss: {test_loss:.4f}, Accuracy: {correct}/{len(test_loader.dataset)} ({correct / len(test_loader.dataset):.3f})')
 
 print(f"Training took {time.monotonic() - ts:.2f} seconds")
 
@@ -103,8 +106,8 @@ def save_result(result, model):
 # Save submittable model
 sub_data = pd.read_csv('dataset/test.csv')
 sub = scaler.fit_transform(sub_data.values)
-sub = torch.tensor(sub, dtype=torch.float32)
-y_fake = torch.tensor(np.random.randint(2, size=sub.shape[0]), dtype=torch.float32)
+sub = torch.tensor(sub, dtype=torch.float32, device=device)
+y_fake = torch.tensor(np.random.randint(2, size=sub.shape[0]), dtype=torch.float32, device=device)
 sub_loader = DataLoader(TensorDataset(sub, y_fake), batch_size=1, shuffle=False)
 
 preds = []
